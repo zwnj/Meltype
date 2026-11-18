@@ -122,9 +122,12 @@ public sealed partial class CompositionController
             var reading = RomajiReading(typedRaw);
             List<string> romaji = reading is null ? [] : JapaneseCandidates(reading, null, _converter);
             List<string> english = [typedRaw, .. EnglishCandidates(typedRaw)];
-            _clauses = [new Clause(typedRaw, true, preferJapanese
+            var registeredClause = new Clause(typedRaw, true, preferJapanese
                 ? Distinct([.. registered, .. romaji, .. english])
-                : Distinct([.. registered, .. english, .. romaji])) { Raw = typedRaw, Kana = reading }];
+                : Distinct([.. registered, .. english, .. romaji]))
+            { Raw = typedRaw, Kana = reading };
+            AddEnglishKatakana(registeredClause, typedRaw);
+            _clauses = [registeredClause];
             _selectedClause = 0;
             _converting = true;
             return;
@@ -178,10 +181,12 @@ public sealed partial class CompositionController
                     english = Distinct([.. english, .. _services.Candidates?.Lookup(segment.Raw) ?? []]);
                 var reading = RomajiReading(segment.Raw);
                 List<string> romaji = reading is null ? [] : JapaneseCandidates(reading, null, converter);
-                clauses.Add(new Clause(segment.Raw, true, preferJapanese && romaji.Count > 0
+                var englishClause = new Clause(segment.Raw, true, preferJapanese && romaji.Count > 0
                     ? Distinct([.. romaji, .. english])
                     : Distinct([.. english, .. romaji]))
-                { Kana = _text.KanaForSegment(segments, s) });
+                { Kana = _text.KanaForSegment(segments, s) };
+                AddEnglishKatakana(englishClause, segment.Raw);
+                clauses.Add(englishClause);
                 continue;
             }
             if (segment.Kana.Length == 0) continue;
@@ -792,6 +797,16 @@ public sealed partial class CompositionController
         var lower = raw.ToLowerInvariant();
         var capitalized = raw.Length > 0 ? char.ToUpperInvariant(raw[0]) + raw[1..] : raw;
         return Distinct(raw, _detector.ProperNouns.Canonical(lower), capitalized, raw.ToUpperInvariant(), CompositionText.ToFullWidth(raw));
+    }
+
+    private void AddEnglishKatakana(Clause clause, string raw)
+    {
+        foreach (var candidate in _services.Candidates?.LookupEnglishKatakana(raw) ?? [])
+        {
+            if (!clause.Candidates.Contains(candidate)) clause.Candidates.Add(candidate);
+            // 外来語を選んでも、英単語自体をローマ字入力と誤学習させない。
+            clause.NotLearned.Add(candidate);
+        }
     }
 
     /// <summary>英語と判定した語を、ローマ字として読んだかな (go → ご)。読み切れなければ null。</summary>

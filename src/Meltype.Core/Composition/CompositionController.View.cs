@@ -123,21 +123,28 @@ public sealed partial class CompositionController
         _predictionIndex = -1;
         _predictions = [];
         if (blocked || _services.Predictor is not { } predictor || !_settings().PredictiveCandidates || _text.Mode != DisplayMode.Auto) return;
-        if (_text.IsAlphanumeric)
-        {
-            // 英単語 1 語の打ちかけ (decis → decisions)
-            if (_text.Raw.All(char.IsAsciiLetter)) _predictions = predictor.PredictEnglish(_text.Raw).Select(w => new Prediction(w, "", _text.Raw)).ToList();
-            return;
-        }
-        var kana = _text.AllKana(final: false);
         var predictions = new List<Prediction>();
-        void Add(IEnumerable<string> words, string before, string reading)
+        void Add(IEnumerable<string> words, string before, string reading, bool englishKatakana = false)
         {
             foreach (var word in words)
             {
-                if (predictions.Count < Predictor.MaxPredictions && !predictions.Any(p => p.Text == word)) predictions.Add(new Prediction(word, before, reading));
+                if (predictions.Count < Predictor.MaxPredictions && !predictions.Any(p => p.Text == word))
+                    predictions.Add(new Prediction(word, before, reading, englishKatakana));
             }
         }
+        // 英語区間の綴りが辞書に完全一致したときだけ出す。前の文字は見えているとおり残す。
+        var segments = _text.Segments();
+        if (!IsProtectedInput && segments.Count > 0 && segments[^1] is { IsEnglish: true, IsProtected: false } last &&
+            CurrentDisplay(final: false) is { } display && display.EndsWith(last.Raw, StringComparison.Ordinal))
+            Add(_services.Candidates?.LookupEnglishKatakana(last.Raw) ?? [], display[..^last.Raw.Length], last.Raw, englishKatakana: true);
+        if (_text.IsAlphanumeric)
+        {
+            // 英単語 1 語の打ちかけ (decis → decisions)
+            if (_text.Raw.All(char.IsAsciiLetter)) Add(predictor.PredictEnglish(_text.Raw), "", _text.Raw);
+            _predictions = predictions;
+            return;
+        }
+        var kana = _text.AllKana(final: false);
         if (kana.All(KanaChars.IsHiraganaOrLongMark))
         {
             foreach (var (before, reading, heads) in PredictionStarts(kana))

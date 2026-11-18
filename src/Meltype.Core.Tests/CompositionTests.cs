@@ -459,6 +459,59 @@ internal static class CompositionTests
     }
 
     [Test]
+    public static void EnglishKatakana_ExactLookupAndCandidateSelection()
+    {
+        var dictionary = CandidateDictionary.Load(null);
+        foreach (var (word, kana) in new[]
+        {
+            ("export", "エクスポート"), ("friend", "フレンド"), ("import", "インポート"),
+            ("project", "プロジェクト"), ("application", "アプリケーション"), ("smartphone", "スマートフォン"),
+        })
+        {
+            Assert.True(dictionary.LookupEnglishKatakana(word).Contains(kana), word);
+            Assert.True(dictionary.LookupEnglishKatakana(word.ToUpperInvariant()).Contains(kana), word + " uppercase");
+        }
+        foreach (var word in new[] { "exports", "export1", "preexport", "made", "the" })
+            Assert.Equal(0, dictionary.LookupEnglishKatakana(word).Count, word);
+
+        var languages = new LanguageMemory(null);
+        var k = new Keyboard(languages: languages) { SeparateKeyRoles = true };
+        k.Type("export");
+        Assert.Equal("export", k.Showing, "入力中は英字のまま");
+        k.Type(" ");
+        var candidates = k.Host.View!.Candidates.ToList();
+        Assert.Equal("export", k.Showing, "候補を開いても英字を優先");
+        Assert.True(candidates.Contains("エクスポート"), "外来語候補: " + string.Join(",", candidates));
+        k.Controller.SelectCandidate(candidates.IndexOf("エクスポート"));
+        k.Type("\n");
+        Assert.Equal("エクスポート", k.Host.Document, "選んだ候補を確定");
+        Assert.Equal(0, languages.Count, "外来語選択を日本語判定として学習しない");
+
+        var english = new Keyboard();
+        english.Type("export the file\n");
+        Assert.Equal("export the file", english.Host.Document, "英文は英字のまま");
+
+        foreach (var (word, kana) in new[] { ("friend", "フレンド"), ("import", "インポート"), ("EXPORT", "エクスポート") })
+        {
+            var conversion = new Keyboard();
+            conversion.Type(word);
+            conversion.Press(VirtualKeys.Convert);
+            Assert.True(conversion.Host.View?.Candidates.Contains(kana) == true, word + " の変換候補");
+            Assert.True(conversion.Host.View!.Candidates.Contains(word), word + " の英字候補");
+        }
+
+        var mixed = new Keyboard();
+        mixed.Type("fairuwoexportsuru");
+        mixed.Press(VirtualKeys.Convert);
+        mixed.Press(VirtualKeys.Left);
+        Assert.True(mixed.Host.View?.Candidates.Contains("エクスポート") == true, "日本語の間の英語区間の候補");
+        var index = mixed.Host.View!.Candidates.ToList().IndexOf("エクスポート");
+        mixed.Controller.SelectCandidate(index);
+        mixed.Type("\n");
+        Assert.True(mixed.Host.Document.Contains("エクスポート", StringComparison.Ordinal), "混在文で選んだ候補を確定: " + mixed.Host.Document);
+    }
+
+    [Test]
     public static void Issue839_EnglishFirstInput()
     {
         // Enter は打った英字のまま、Space は空白 (ls -la)
@@ -804,6 +857,75 @@ internal static class CompositionTests
         var first = predictions[0];
         k.Press(VirtualKeys.Return);
         Assert.Equal(first, k.Host.Document);
+    }
+
+    [Test]
+    public static void EnglishKatakana_PredictionCanBeSelectedWhileTyping()
+    {
+        var phrases = new PhraseHistory(null);
+        var k = new Keyboard(predictor: new Predictor(phrases, null, null));
+        k.Type("export");
+        Assert.Equal("export", k.Showing, "入力中は英字を維持");
+        Assert.Equal("エクスポート", k.Host.View!.Predictions![0], "完全一致する外来語は予測に出す");
+        Assert.True(k.Host.View.Predictions.Count <= Predictor.MaxPredictions, "予測候補の上限を守る");
+        Assert.True(k.Host.View.Predictions.Any(p => p.StartsWith("export", StringComparison.Ordinal)), "英単語の続きを残す");
+        k.Press(VirtualKeys.Tab);
+        Assert.Equal("エクスポート", k.Showing, "Tab で選ぶ");
+        k.Press(VirtualKeys.Return);
+        Assert.Equal("エクスポート", k.Host.Document, "Enter で確定");
+        Assert.True(!phrases.StartingWith("export").Contains("エクスポート"), "英字を日本語の読みとして学習しない");
+
+        var partial = new Keyboard(predictor: new Predictor(null, null, null));
+        partial.Type("expor");
+        Assert.True(partial.Host.View!.Predictions?.Contains("エクスポート") != true, "途中の綴りは一致しない");
+        partial.Type("t ");
+        Assert.Equal("export ", partial.Host.Document, "Tab で選ばなければ Space は従来どおり");
+
+        var upper = new Keyboard(predictor: new Predictor(null, null, null));
+        upper.Type("EXPORT");
+        Assert.True(upper.Host.View!.Predictions?.Contains("エクスポート") == true, "大文字でも一致");
+
+        var protectedInput = new Keyboard(predictor: new Predictor(null, null, null));
+        protectedInput.Type("https://example.com/export");
+        Assert.True(protectedInput.Host.View?.Predictions?.Contains("エクスポート") != true, "URL を候補に変えない");
+
+        var mixed = new Keyboard(predictor: new Predictor(null, null, null));
+        mixed.Type("fairuwoexport");
+        Assert.True(mixed.Host.View!.Predictions?.Contains("エクスポート") == true, "日本語に続く英語の予測");
+        var before = mixed.Showing![..^"export".Length];
+        mixed.Press(VirtualKeys.Tab);
+        mixed.Press(VirtualKeys.Return);
+        Assert.Equal(before + "エクスポート", mixed.Host.Document, "前の文字を残して確定");
+    }
+
+    [Test]
+    public static void EnglishKatakana_AdditionalWordsOfferPredictions()
+    {
+        var examples = new[]
+        {
+            ("browser", "ブラウザー"), ("camera", "カメラ"),
+            ("client", "クライアント"), ("coffee", "コーヒー"),
+            ("database", "データベース"), ("download", "ダウンロード"), ("game", "ゲーム"),
+            ("keyboard", "キーボード"), ("message", "メッセージ"), ("monitor", "モニター"),
+            ("network", "ネットワーク"), ("password", "パスワード"), ("server", "サーバー"),
+            ("upload", "アップロード"), ("video", "ビデオ"),
+            ("cloud", "クラウド"), ("display", "ディスプレイ"),
+            ("event", "イベント"), ("file", "ファイル"),
+            ("folder", "フォルダー"), ("fruit", "フルーツ"), ("group", "グループ"),
+            ("image", "イメージ"), ("interface", "インターフェース"),
+            ("live", "ライブ"), ("music", "ミュージック"), ("news", "ニュース"),
+            ("style", "スタイル"), ("switch", "スイッチ"), ("team", "チーム"),
+            ("website", "ウェブサイト"), ("world", "ワールド"),
+        };
+        var unavailable = new List<string>();
+        var predictor = new Predictor(null, null, null);
+        foreach (var (word, kana) in examples)
+        {
+            var k = new Keyboard(predictor: predictor);
+            k.Type(word);
+            if (k.Host.View?.Predictions?.Contains(kana) != true) unavailable.Add(word + " (" + k.Showing + ")");
+        }
+        Assert.True(unavailable.Count == 0, "予測候補が出ない語: " + string.Join(", ", unavailable));
     }
 
     [Test]

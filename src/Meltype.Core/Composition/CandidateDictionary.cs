@@ -13,6 +13,9 @@ public sealed class CandidateDictionary
 {
     private readonly Dictionary<string, string[]> _entries = new(StringComparer.Ordinal);
 
+    // 英語の綴りから外来語を引く。通常の読みの辞書とは分け、部分一致や助詞の補完を行わない。
+    private readonly Dictionary<string, string[]> _englishKatakana = new(StringComparer.OrdinalIgnoreCase);
+
     // 絵文字・顔文字 (emoji.txt・emoji-cldr.txt)。変換の候補では最後にまとめて出すので、ほかの候補と分けて持つ。
     private readonly Dictionary<string, string[]> _emoji = new(StringComparer.Ordinal);
 
@@ -33,6 +36,7 @@ public sealed class CandidateDictionary
         dictionary.AddText(Detection.DictionarySource.ReadEmbedded("loanwords.txt"));
         // JMdict に無い社名・サービス名 (しゃおみ → Xiaomi)。手で書いたもの
         dictionary.AddText(Detection.DictionarySource.ReadEmbedded("brands.txt"));
+        dictionary.AddEnglishKatakanaText(Detection.DictionarySource.ReadEmbedded("english-katakana.txt"));
         foreach (var name in Detection.DictionarySource.EmbeddedNames("domain-"))
             dictionary.AddDomainText(Detection.DictionarySource.ReadEmbedded(name));
         if (userDirectory is not null)
@@ -68,6 +72,18 @@ public sealed class CandidateDictionary
             Add(parts[0], parts.Skip(1));
         }
     }
+
+    private void AddEnglishKatakanaText(string text)
+    {
+        foreach (var line in Detection.DictionarySource.LinesWithoutComments(text))
+        {
+            var parts = line.Split([' ', '\t', '\r', '　'], StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length >= 2) Add(_englishKatakana, parts[0], parts.Skip(1));
+        }
+    }
+
+    /// <summary>英単語の完全一致による外来語候補。英字の大文字・小文字は区別しない。</summary>
+    public IReadOnlyList<string> LookupEnglishKatakana(string word) => _englishKatakana.GetValueOrDefault(word) ?? [];
 
     /// <summary>
     /// 絵文字・顔文字の辞書 (emoji.txt)。顔文字には空白や # が入るので、区切りはタブだけ、コメントは行頭の # だけ。

@@ -170,7 +170,8 @@ public sealed partial class CompositionController
     private void CommitPrediction(Prediction prediction)
     {
         _predictionIndex = -1;
-        if (!prediction.Text.All(c => c < 0x80) && Learning)
+        // 英単語の綴りを日本語の読みとして予測履歴に覚えると、後の入力を誤って補完する。
+        if (!prediction.IsEnglishKatakana && !prediction.Text.All(c => c < 0x80) && Learning)
             _services.Predictor?.Phrases?.Remember(PredictionReading(prediction.Text, prediction.Reading), prediction.Text);
         // 最後の文節の続きの候補なら、前の文節 (見えているとおり) とつなげて確定する
         var text = prediction.Before + prediction.Text;

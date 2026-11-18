@@ -128,7 +128,7 @@ public sealed partial class CompositionController
     /// 予測変換の候補。Text は一覧に出す語、Before は選んだときに語の前に残す文字 (最後の文節の続きの候補なら前の文節の見えている文字、
     /// 読み全体の続きの候補なら空)、Reading は語に置き換わる打ちかけの読み。
     /// </summary>
-    private sealed record Prediction(string Text, string Before, string Reading);
+    private sealed record Prediction(string Text, string Before, string Reading, bool IsEnglishKatakana = false);
 
     // 英数状態で判定中の語。打鍵はすぐアプリに送り (待たせない)、ローマ字と分かったら消して変換ボックスに入れ直す。
     private readonly StringBuilder _heldLetters = new();
