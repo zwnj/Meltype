@@ -466,6 +466,7 @@ internal static class CompositionTests
         {
             ("export", "エクスポート"), ("friend", "フレンド"), ("import", "インポート"),
             ("project", "プロジェクト"), ("application", "アプリケーション"), ("smartphone", "スマートフォン"),
+            ("account", "アカウント"), ("schedule", "スケジュール"), ("security", "セキュリティ"),
         })
         {
             Assert.True(dictionary.LookupEnglishKatakana(word).Contains(kana), word);
