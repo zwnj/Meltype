@@ -179,7 +179,7 @@ internal static class SessionFacadeTests
         foreach (var (input, expected) in new[] {
             ("wsldeshell", "wslでshell"),
             ("kyouhagoogledekensaku", "今日はgoogleで検索"),
-            ("seeyouagain", "see you again"),
+            ("seeyouagain", "seeyouagain"),
             ("I want to go to the park", "I want to go to the park"),
             ("Zorgblax", "Zorgblax"),
             ("stackoverflow", "stackoverflow"),
@@ -191,7 +191,7 @@ internal static class SessionFacadeTests
             ("get_user_name", "get_user_name") })
         {
             var session = new MeltypeSession(CompositionDetector.CreateDefault(), new CompositionTests.FakeConverter(),
-                new CompositionServices { AutomaticEnglishSpacing = () => true }, () => new Settings { LiveConversion = true });
+                new CompositionServices(), () => new Settings { LiveConversion = true });
             var results = Type(session, input + "\n");
             var output = "";
             for (var i = 0; i < results.Count; i++)
@@ -886,9 +886,7 @@ internal static class SessionFacadeTests
             ("reflectsareta", "reflectされた"), ("reflectsita", "reflectした"),
             ("reflectsaseru", "reflectさせる"), ("reflected", "reflected"), ("reflects", "reflects") })
         {
-            var detector = CompositionDetector.CreateDefault();
-            detector.SpellChecker = Meltype.Detection.BuiltInWordChecker.Shared;
-            var session = new MeltypeSession(detector, new CompositionTests.FakeConverter(), new CompositionServices(), () => new Settings());
+            var session = new MeltypeSession(CompositionDetector.CreateDefault(), new CompositionTests.FakeConverter(), new CompositionServices(), () => new Settings());
             var results = Type(session, input + "\n");
             Assert.Equal(expected, string.Concat(results.SelectMany(r => r.Commits).Select(e => e.Text)));
         }
@@ -914,7 +912,6 @@ internal static class SessionFacadeTests
             })
             {
                 var detector = CompositionDetector.CreateDefault();
-                detector.SpellChecker = Meltype.Detection.BuiltInWordChecker.Shared;
                 var session = new MeltypeSession(detector, new CompositionTests.FakeConverter(), new CompositionServices(),
                     () => new Settings { SpaceAroundEnglish = true, LiveConversion = false });
                 var document = "";
@@ -949,7 +946,6 @@ internal static class SessionFacadeTests
             })
             {
                 var detector = CompositionDetector.CreateDefault();
-                detector.SpellChecker = Meltype.Detection.BuiltInWordChecker.Shared;
                 var session = new MeltypeSession(detector, new CompositionTests.FakeConverter(), new CompositionServices(), () => new Settings { LiveConversion = false });
                 var document = "";
                 foreach (var c in string.Concat(steps))

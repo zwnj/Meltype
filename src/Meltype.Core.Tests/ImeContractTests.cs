@@ -53,6 +53,9 @@ internal static class ImeContractTests
         /// <summary>OS の IME の開閉 (TSF の OPENCLOSE)。</summary>
         public bool Open { get; set; } = true;
 
+        /// <summary>OS が IME の開閉を持つフロント (TSF など) か。持たないフロント (Android) は imeOpen を送らない。</summary>
+        public bool SendsImeOpen { get; init; } = true;
+
         /// <summary>入力欄の性質 (OS が知らせるもの)。</summary>
         public List<string> Traits { get; } = [];
 
@@ -99,7 +102,7 @@ internal static class ImeContractTests
             var field = $"{{{surrounding}\"composing\":{(composing ? "true" : "false")},\"traits\":{JsonSerializer.Serialize(Traits)}" +
                 (App is null ? "" : $",\"app\":{Json(App)}") + (Selection is null ? "" : $",\"selection\":{Json(Selection)}") + "}";
             var fieldFact = omitField ? "" : $",\"field\":{field}";
-            var output = Send($"{{\"version\":{ImeHost.Version},\"type\":\"{type}\",\"instance\":{Json(instance)},\"imeOpen\":{(Open ? "true" : "false")}{fieldFact}{extra}}}");
+            var output = Send($"{{\"version\":{ImeHost.Version},\"type\":\"{type}\",\"instance\":{Json(instance)}{(SendsImeOpen ? $",\"imeOpen\":{(Open ? "true" : "false")}" : "")}{fieldFact}{extra}}}");
             Apply(output, instance);
             return output;
         }
@@ -479,6 +482,14 @@ internal static class ImeContractTests
             "入力中のキーの役割を分けるなら、無変換は英字にする\n" + front.Trace);
         front.Key('\n');
         front.Settings.SeparateKeyRoles = false;
+        // 役割を分けなくても、無変換でカタカナを切り替える設定が ON なら、入力中の無変換は確定せず切り替える
+        front.Settings.NonConvertCyclesKana = true;
+        front.Type("ka");
+        var cycle = front.Key(VirtualKeys.NonConvert);
+        Assert.True(front.Open && cycle.GetProperty("result").GetProperty("view").GetProperty("text").GetString() == "カ",
+            "無変換でカタカナ (確定して英数にしない)\n" + front.Trace);
+        front.Key('\n');
+        front.Settings.NonConvertCyclesKana = false;
         // 親指シフトの配列では親指キー (変換ボックスで使う)
         front.Settings.InputStyle = InputStyle.Kana;
         front.Settings.KanaLayout = KanaLayout.Nicola;
@@ -586,6 +597,22 @@ internal static class ImeContractTests
     }
 
     [Test]
+    public static void EmailAndNumericFields_AreNotHandled()
+    {
+        foreach (var trait in new[] { "Email", "Numeric" })
+        {
+            var front = new Front { SendsImeOpen = false };
+            front.Traits.Add(trait);
+            var entered = front.Event("CaretMoved", extra: Entered);
+            Assert.True(!Active(entered) && entered.GetProperty("state").GetProperty("languageMode").GetString() == "Alphanumeric", $"{trait}: 受け持たない (英数)\n" + front.Trace);
+            Assert.True(!Active(front.Key('a')) && front.Document == "a", $"{trait}: キーはそのまま入る\n" + front.Trace);
+            Assert.True(front.Event("JapaneseModeSelected").GetProperty("state").GetProperty("languageMode").GetString() == "Alphanumeric", $"{trait}: 日本語にしない\n" + front.Trace);
+            front.Traits.Clear();
+            Assert.True(front.Event("CaretMoved", extra: Entered).GetProperty("state").GetProperty("languageMode").GetString() == "Japanese", $"{trait}: ふつうの欄では日本語\n" + front.Trace);
+        }
+    }
+
+    [Test]
     public static void Password_PassesKeysWithoutCreatingASession()
     {
         foreach (var traits in new string[][] { ["Password"], ["Password", "Private"], ["Terminal", "Password"] })
@@ -607,6 +634,24 @@ internal static class ImeContractTests
             front.Type("sa");
             Assert.Equal("さ", front.Composition["t1"], "周辺文字列が届かない通常欄では変換する\n" + front.Trace);
         }
+    }
+
+    [Test]
+    public static void Password_OverridesAppRuleThatTreatsFieldAsText()
+    {
+        const string app = "auth-client";
+        var front = new Front { App = app };
+        front.Settings.AppRules.Add(new AppRule { Process = app, TextInput = true });
+        front.Traits.Add("NonText");
+        Assert.True(front.Type("ka").All(Consumed), "アプリ別設定でテキスト欄として受け持つ\n" + front.Trace);
+        Assert.Equal("か", front.Composition["t1"], front.Trace);
+
+        front.Traits.Add("Password");
+        foreach (var key in "aiueo\n")
+        {
+            AssertPasswordPass(front, front.Key(key));
+        }
+        Assert.Equal("aiueo\n", front.Document, "パスワード欄では未確定文字を取り消して打鍵を通す\n" + front.Trace);
     }
 
     [Test]

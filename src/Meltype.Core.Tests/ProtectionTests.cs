@@ -105,7 +105,6 @@ internal static class ProtectionTests
 
     private static MeltypeSession Create(LanguageMemory? languages = null, bool spaceAroundEnglish = false)
     {
-        CompositionTests.Detector.SpellChecker = Detection.BuiltInWordChecker.Shared;
         // 製品の CreateDefault と同じく、候補辞書・誤字補正・文脈辞書を入れる (実経路と同じ条件で検査する)。
         var services = new CompositionServices
         {
@@ -140,7 +139,7 @@ internal static class ProtectionTests
     }
 
     [Test]
-    public static void Protected_CommitsIgnoreAutomaticEnglishSpacing()
+    public static void Protected_CommitsIgnoreSpaceAroundEnglish()
     {
         foreach (var raw in new[] { "@user", "taro@example.com", "https://example.com", "./src/main.ts", @"C:\Users\taro" })
             foreach (var operation in new[] { VirtualKeys.Return, VirtualKeys.Space, VirtualKeys.Tab, 0 })
@@ -268,7 +267,7 @@ internal static class ProtectionTests
             var text = new CompositionText(CompositionTests.Detector);
             foreach (var c in "kyouha「" + token + "」ashita") text.Append(c);
             var calls = new List<string>();
-            var shown = text.Display(final: true, convert: kana =>
+            var shown = text.Display(final: true, convert: (kana, _) =>
             {
                 calls.Add(kana);
                 return kana.Replace("きょうは", "今日は").Replace("あした", "明日");
